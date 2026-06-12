@@ -36,13 +36,8 @@ contract CustodyChainTest is Test {
     }
 
     // --- HELPER DE FIRMAS EIP-191 ---
-    function _generateSignature(
-        uint256 privateKey,
-        bytes32 messageHash
-    ) internal pure returns (bytes memory) {
-        bytes32 ethSignedHash = keccak256(
-            abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash)
-        );
+    function _generateSignature(uint256 privateKey, bytes32 messageHash) internal pure returns (bytes memory) {
+        bytes32 ethSignedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, ethSignedHash);
         return abi.encodePacked(r, s, v);
     }
@@ -50,13 +45,7 @@ contract CustodyChainTest is Test {
     // --- HELPER ESTRUCTURAL PARA CAMINO FELIZ ---
     function _setupAndDeliverShipment() internal returns (uint256) {
         vm.prank(client.addr);
-        chain.createShipment{value: payment}(
-            driver.addr,
-            photoHash,
-            arbiters,
-            2,
-            collateral
-        );
+        chain.createShipment{value: payment}(driver.addr, photoHash, arbiters, 2, collateral);
 
         vm.prank(driver.addr);
         chain.pickUp{value: collateral}(0);
@@ -64,9 +53,7 @@ contract CustodyChainTest is Test {
         vm.prank(driver.addr);
         chain.markInTransit(0);
 
-        bytes32 msgHash = keccak256(
-            abi.encodePacked(uint256(0), deliveryPhotoHash)
-        );
+        bytes32 msgHash = keccak256(abi.encodePacked(uint256(0), deliveryPhotoHash));
         bytes memory sig = _generateSignature(driver.key, msgHash);
 
         vm.prank(driver.addr);
@@ -88,14 +75,9 @@ contract CustodyChainTest is Test {
         vm.prank(client.addr);
         chain.confirmReceipt(id, sig);
 
+        assertEq(uint256(chain.getShipmentState(id)), uint256(CustodyChain.State.Confirmed));
         assertEq(
-            uint(chain.getShipmentState(id)),
-            uint(CustodyChain.State.Confirmed)
-        );
-        assertEq(
-            driver.addr.balance,
-            driverBalanceBefore + payment + collateral,
-            "Driver did not receive pay + deposit"
+            driver.addr.balance, driverBalanceBefore + payment + collateral, "Driver did not receive pay + deposit"
         );
         assertEq(address(chain).balance, 0, "Vault leak detected");
     }
@@ -110,14 +92,8 @@ contract CustodyChainTest is Test {
         // Cualquier persona puede detonar la escoba automática
         chain.autoConfirm(id);
 
-        assertEq(
-            uint(chain.getShipmentState(id)),
-            uint(CustodyChain.State.Confirmed)
-        );
-        assertEq(
-            driver.addr.balance,
-            driverBalanceBefore + payment + collateral
-        );
+        assertEq(uint256(chain.getShipmentState(id)), uint256(CustodyChain.State.Confirmed));
+        assertEq(driver.addr.balance, driverBalanceBefore + payment + collateral);
     }
 
     function test_Multisig_DisputeResolvedForClient() public {
@@ -130,10 +106,7 @@ contract CustodyChainTest is Test {
         vm.prank(client.addr);
         chain.dispute(id, "Box is broken", sig);
 
-        assertEq(
-            uint(chain.getShipmentState(id)),
-            uint(CustodyChain.State.Disputed)
-        );
+        assertEq(uint256(chain.getShipmentState(id)), uint256(CustodyChain.State.Disputed));
 
         // Jurado delibera y alcanza el umbral de 2 votos
         vm.prank(arbiter1);
@@ -142,10 +115,7 @@ contract CustodyChainTest is Test {
         vm.prank(arbiter3);
         chain.vote(id, true); // Voto Cliente -> Cierra disputa
 
-        assertEq(
-            uint(chain.getShipmentState(id)),
-            uint(CustodyChain.State.Resolved)
-        );
+        assertEq(uint256(chain.getShipmentState(id)), uint256(CustodyChain.State.Resolved));
         assertEq(
             client.addr.balance,
             clientBalanceBefore + payment + collateral,
@@ -155,13 +125,7 @@ contract CustodyChainTest is Test {
 
     function test_CancelShipment_ClientRescue() public {
         vm.prank(client.addr);
-        chain.createShipment{value: payment}(
-            driver.addr,
-            photoHash,
-            arbiters,
-            2,
-            collateral
-        );
+        chain.createShipment{value: payment}(driver.addr, photoHash, arbiters, 2, collateral);
 
         // El driver desaparece. Saltamos el margen de recogida de 24 horas.
         vm.warp(block.timestamp + 24 hours + 1 seconds);
@@ -171,10 +135,7 @@ contract CustodyChainTest is Test {
         vm.prank(client.addr);
         chain.cancelShipment(0);
 
-        assertEq(
-            uint(chain.getShipmentState(0)),
-            uint(CustodyChain.State.Resolved)
-        );
+        assertEq(uint256(chain.getShipmentState(0)), uint256(CustodyChain.State.Resolved));
         assertEq(client.addr.balance, clientBalanceBefore + payment);
     }
 
@@ -214,13 +175,7 @@ contract CustodyChainTest is Test {
 
     function test_Revert_UnauthorizedDriverIntervention() public {
         vm.prank(client.addr);
-        chain.createShipment{value: payment}(
-            driver.addr,
-            photoHash,
-            arbiters,
-            2,
-            collateral
-        );
+        chain.createShipment{value: payment}(driver.addr, photoHash, arbiters, 2, collateral);
 
         address attacker = address(0xDEAD);
         vm.deal(attacker, 10 ether);

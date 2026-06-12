@@ -55,36 +55,15 @@ contract CustodyChain {
     // 4. EVENTOS (Trazabilidad Total)
     // ==========================================
     event ShipmentCreated(
-        uint256 indexed id,
-        address indexed driver,
-        address indexed client,
-        uint256 payment,
-        uint256 requiredCollateral
+        uint256 indexed id, address indexed driver, address indexed client, uint256 payment, uint256 requiredCollateral
     );
-    event PickedUp(
-        uint256 indexed id,
-        address indexed driver,
-        uint256 collateral
-    );
+    event PickedUp(uint256 indexed id, address indexed driver, uint256 collateral);
     event InTransitUpdate(uint256 indexed id, address indexed driver);
-    event Delivered(
-        uint256 indexed id,
-        address indexed driver,
-        bytes32 photoHash
-    );
+    event Delivered(uint256 indexed id, address indexed driver, bytes32 photoHash);
     event Confirmed(uint256 indexed id, address indexed client);
-    event AutoConfirmed(
-        uint256 indexed id,
-        address indexed driver,
-        uint256 payout
-    );
+    event AutoConfirmed(uint256 indexed id, address indexed driver, uint256 payout);
     event Disputed(uint256 indexed id, address indexed client, string reason);
-    event DisputeResolved(
-        uint256 indexed id,
-        bool inFavorOfClient,
-        uint256 votesClient,
-        uint256 votesDriver
-    );
+    event DisputeResolved(uint256 indexed id, bool inFavorOfClient, uint256 votesClient, uint256 votesDriver);
     event ShipmentCancelled(uint256 indexed id, address indexed client);
 
     // ==========================================
@@ -126,10 +105,7 @@ contract CustodyChain {
         require(_driver != address(0), "Invalid driver");
         require(msg.value > 0, "Payment required");
         require(_arbiters.length > 0, "At least one arbiter");
-        require(
-            _threshold > 0 && _threshold <= _arbiters.length,
-            "Invalid threshold"
-        );
+        require(_threshold > 0 && _threshold <= _arbiters.length, "Invalid threshold");
         require(_photoHash != bytes32(0), "Photo hash required");
 
         uint256 id = shipments.length;
@@ -150,68 +126,45 @@ contract CustodyChain {
             isArbiterForShipment[id][_arbiters[i]] = true;
         }
 
-        emit ShipmentCreated(
-            id,
-            _driver,
-            msg.sender,
-            msg.value,
-            _requiredCollateral
-        );
+        emit ShipmentCreated(id, _driver, msg.sender, msg.value, _requiredCollateral);
     }
 
     /// @notice El driver acepta el transporte depositando su colateral de garantía.
-    function pickUp(
-        uint256 _id
-    ) external payable onlyDriver(_id) inState(_id, State.Created) {
-        require(
-            msg.value == shipments[_id].collateral,
-            "Must deposit exact collateral"
-        );
+    function pickUp(uint256 _id) external payable onlyDriver(_id) inState(_id, State.Created) {
+        require(msg.value == shipments[_id].collateral, "Must deposit exact collateral");
 
         shipments[_id].state = State.PickedUp;
         emit PickedUp(_id, msg.sender, msg.value);
     }
 
     /// @notice Cláusula de escape: Si el driver deja colgado al cliente en Created, el cliente rescata sus fondos.
-    function cancelShipment(
-        uint256 _id
-    ) external onlyClient(_id) inState(_id, State.Created) {
-        require(
-            block.timestamp > shipments[_id].pickupDeadline,
-            "Driver still has time to pickup"
-        );
+    function cancelShipment(uint256 _id) external onlyClient(_id) inState(_id, State.Created) {
+        require(block.timestamp > shipments[_id].pickupDeadline, "Driver still has time to pickup");
 
         shipments[_id].state = State.Resolved;
 
-        (bool success, ) = shipments[_id].client.call{
-            value: shipments[_id].payment
-        }("");
+        (bool success,) = shipments[_id].client.call{value: shipments[_id].payment}("");
         require(success, "Refund failed");
 
         emit ShipmentCancelled(_id, msg.sender);
     }
 
-    function markInTransit(
-        uint256 _id
-    ) external onlyDriver(_id) inState(_id, State.PickedUp) {
+    function markInTransit(uint256 _id) external onlyDriver(_id) inState(_id, State.PickedUp) {
         shipments[_id].state = State.InTransit;
         emit InTransitUpdate(_id, msg.sender);
     }
 
     /// @notice Driver entrega y firma criptográficamente los datos físicos (sin block.timestamp volátil).
-    function markDelivered(
-        uint256 _id,
-        bytes32 _photoHash,
-        bytes calldata _signature
-    ) external onlyDriver(_id) inState(_id, State.InTransit) {
+    function markDelivered(uint256 _id, bytes32 _photoHash, bytes calldata _signature)
+        external
+        onlyDriver(_id)
+        inState(_id, State.InTransit)
+    {
         require(_photoHash != bytes32(0), "Photo required");
         Shipment storage s = shipments[_id];
 
         bytes32 message = keccak256(abi.encodePacked(_id, _photoHash));
-        require(
-            recoverSigner(message, _signature) == s.driver,
-            "Invalid driver signature"
-        );
+        require(recoverSigner(message, _signature) == s.driver, "Invalid driver signature");
 
         s.photoHash = _photoHash;
         s.driverSignature = _signature;
@@ -223,62 +176,53 @@ contract CustodyChain {
     }
 
     /// @notice El cliente firma de conformidad. El driver cobra su recompensa + recupera su fianza.
-    function confirmReceipt(
-        uint256 _id,
-        bytes calldata _signature
-    ) external onlyClient(_id) inState(_id, State.Delivered) {
+    function confirmReceipt(uint256 _id, bytes calldata _signature)
+        external
+        onlyClient(_id)
+        inState(_id, State.Delivered)
+    {
         Shipment storage s = shipments[_id];
-        require(
-            block.timestamp <= s.confirmDeadline,
-            "Confirmation window expired"
-        );
+        require(block.timestamp <= s.confirmDeadline, "Confirmation window expired");
 
         bytes32 message = keccak256(abi.encodePacked(_id, s.photoHash));
-        require(
-            recoverSigner(message, _signature) == s.client,
-            "Invalid client signature"
-        );
+        require(recoverSigner(message, _signature) == s.client, "Invalid client signature");
 
         s.clientSignature = _signature;
         s.state = State.Confirmed;
 
         uint256 totalPayout = s.payment + s.collateral;
-        (bool success, ) = s.driver.call{value: totalPayout}("");
+        (bool success,) = s.driver.call{value: totalPayout}("");
         require(success, "Payout failed");
 
         emit Confirmed(_id, msg.sender);
     }
 
     /// @notice Mecanismo SpawnLedger: Si el cliente ignora el paquete, el sistema liquida a favor del transportista de forma automática.
-    function autoConfirm(
-        uint256 _id
-    ) external inState(_id, State.Delivered) notResolved(_id) {
+    function autoConfirm(uint256 _id) external inState(_id, State.Delivered) notResolved(_id) {
         Shipment storage s = shipments[_id];
         require(block.timestamp > s.confirmDeadline, "Deadline not passed yet");
 
         s.state = State.Confirmed;
 
         uint256 totalPayout = s.payment + s.collateral;
-        (bool success, ) = s.driver.call{value: totalPayout}("");
+        (bool success,) = s.driver.call{value: totalPayout}("");
         require(success, "Auto payout failed");
 
         emit AutoConfirmed(_id, s.driver, totalPayout);
     }
 
     /// @notice Bloquea fondos y abre juicio descentralizado.
-    function dispute(
-        uint256 _id,
-        string calldata _reason,
-        bytes calldata _signature
-    ) external onlyClient(_id) inState(_id, State.Delivered) notResolved(_id) {
+    function dispute(uint256 _id, string calldata _reason, bytes calldata _signature)
+        external
+        onlyClient(_id)
+        inState(_id, State.Delivered)
+        notResolved(_id)
+    {
         Shipment storage s = shipments[_id];
         require(block.timestamp <= s.confirmDeadline, "Dispute window expired");
 
         bytes32 message = keccak256(abi.encodePacked(_id, _reason));
-        require(
-            recoverSigner(message, _signature) == s.client,
-            "Invalid client signature"
-        );
+        require(recoverSigner(message, _signature) == s.client, "Invalid client signature");
 
         s.clientSignature = _signature;
         s.state = State.Disputed;
@@ -287,10 +231,12 @@ contract CustodyChain {
     }
 
     /// @notice Los árbitros autorizados (Multisig style) votan de forma transparente e inmutable.
-    function vote(
-        uint256 _id,
-        bool inFavorOfClient
-    ) external onlyArbiter(_id) inState(_id, State.Disputed) notResolved(_id) {
+    function vote(uint256 _id, bool inFavorOfClient)
+        external
+        onlyArbiter(_id)
+        inState(_id, State.Disputed)
+        notResolved(_id)
+    {
         Shipment storage s = shipments[_id];
         require(!hasVoted[_id][msg.sender], "Already voted");
 
@@ -318,39 +264,27 @@ contract CustodyChain {
 
         if (inFavorOfClient) {
             // Cliente gana: Se le devuelve su pago y se queda el colateral del driver como compensación por daños/pérdida
-            (bool success, ) = s.client.call{value: totalFunds}("");
+            (bool success,) = s.client.call{value: totalFunds}("");
             require(success, "Refund failed");
         } else {
             // Driver gana: Intento de fraude del cliente expuesto. Driver toma todo.
-            (bool success, ) = s.driver.call{value: totalFunds}("");
+            (bool success,) = s.driver.call{value: totalFunds}("");
             require(success, "Payment to driver failed");
         }
 
-        emit DisputeResolved(
-            _id,
-            inFavorOfClient,
-            s.votesForClient,
-            s.votesForDriver
-        );
+        emit DisputeResolved(_id, inFavorOfClient, s.votesForClient, s.votesForDriver);
     }
 
     // ==========================================
     // 7. UTILIDADES CRIPTOGRÁFICAS (EIP-191)
     // ==========================================
-    function recoverSigner(
-        bytes32 _message,
-        bytes calldata _signature
-    ) public pure returns (address) {
-        bytes32 ethSignedHash = keccak256(
-            abi.encodePacked("\x19Ethereum Signed Message:\n32", _message)
-        );
+    function recoverSigner(bytes32 _message, bytes calldata _signature) public pure returns (address) {
+        bytes32 ethSignedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", _message));
         (bytes32 r, bytes32 s, uint8 v) = _splitSignature(_signature);
         return ecrecover(ethSignedHash, v, r, s);
     }
 
-    function _splitSignature(
-        bytes calldata _sig
-    ) private pure returns (bytes32 r, bytes32 s, uint8 v) {
+    function _splitSignature(bytes calldata _sig) private pure returns (bytes32 r, bytes32 s, uint8 v) {
         require(_sig.length == 65, "Invalid signature length");
         assembly {
             r := calldataload(_sig.offset)
